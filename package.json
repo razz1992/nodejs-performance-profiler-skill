@@ -1,0 +1,12 @@
+{
+  "name": "nodejs-performance-profiler-learning",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in Node.js sample for learning safe performance profiling skills",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node src/server.js",
+    "profile": "node scripts/profile.js",
+    "threadpool-check": "node scripts/threadpool-check.js"
+  }
+}
