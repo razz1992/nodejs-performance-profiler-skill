@@ -1,115 +1,130 @@
 ---
 name: nodejs-performance-profiler
-description: Diagnose CPU usage, memory usage, and event-loop delay in a local Node.js application, then document evidence-backed bugs and a regression-test plan for human review by a coding agent. Do not investigate thread-pool issues or automatically fix application code.
+description: Investigate CPU, memory, event-loop delay, request latency, and libuv thread-pool behavior in a local Node.js application. Record evidence-backed bugs and enhancements in a numbered review backlog for weekly or biweekly human approval; never implement unapproved changes.
 ---
 
-# Node.js Performance Profiling and Bug-Triage Skill
+# Node.js Performance Profiling and Investigation Skill
 
 ## Purpose
-Run a repeatable, bounded, read-only performance investigation of the included sample Node.js HTTP application. Gather evidence about **CPU usage, memory usage, and event-loop delay**. When evidence supports a likely defect, create a standalone bug report with explicit regression-test requirements. A human must approve implementation before application source or test files are changed.
 
-## Scope
-Investigate only:
-1. CPU time and CPU-bound request behavior.
-2. Memory usage and whether repeated measurements suggest growth.
-3. Event-loop utilization, event-loop delay, and request latency under idle and controlled CPU load.
+Run a repeatable, bounded, read-only performance investigation of the included sample Node.js HTTP application. Investigate **CPU, memory, event-loop delay/utilization, request latency, and libuv thread-pool behavior**. Record each evidence-backed bug or enhancement in a numbered Markdown backlog, including current-system impact and an estimated improvement. Findings are proposals only: a human reviews backlog items weekly or biweekly and approves individual IDs before implementation.
 
-**Explicitly out of scope:** libuv thread-pool diagnosis, `crypto.pbkdf2` experiments, thread-pool saturation hypotheses, and `scripts/threadpool-check.js`. Do not run or report a thread-pool experiment unless the user separately changes this skill's scope.
+## Investigation scope
+
+Investigate:
+1. CPU time, CPU-bound request behavior, and possible synchronous blocking.
+2. Memory usage, allocation patterns, and evidence of possible growth.
+3. Event-loop utilization, delay, and request latency under idle and controlled workloads.
+4. libuv thread-pool utilization/queueing symptoms and relevant asynchronous workloads, including the existing `scripts/threadpool-check.js` if present and safe after inspection.
+5. Interactions between these areas, distinguishing event-loop blocking from thread-pool queueing and from external/system bottlenecks.
+
+Do not assume a single metric proves a root cause. Thread-pool workload experiments must be bounded, local, and reviewed for their behavior before execution. Do not add dependencies or use network resources without explicit approval.
 
 ## Safety and change-control rules
+
 - Work only inside this project directory unless the user explicitly approves another target.
-- During profiling and initial bug triage, do not edit application source, tests, or `package.json`.
-- Do not install packages or access the network unless the user explicitly approves it. Prefer Node.js built-ins.
+- During investigation and initial triage, do not edit application source, tests, or `package.json`.
+- Do not install packages or access the network unless explicitly approved. Prefer Node.js built-ins and existing scripts.
 - Run automated tests before performance experiments. If tests fail, record the exact failure and stop dependent experiments.
 - Start the sample server only on `127.0.0.1:3000`.
-- Keep workload bounded. Use existing scripts and a small, documented number of controlled requests.
+- Keep workloads bounded; inspect scripts and their maximum workload before running them. Do not increase workload simply to obtain a dramatic result.
 - Check whether port 3000 already has a listener before starting the server. Identify the process and command line before stopping anything; never terminate an unrelated process.
 - Stop only server processes started by this workflow and verify that the port is no longer listening afterward.
-- Never claim that a single metric or run proves a root cause. Separate observations, hypotheses, and confirmed defects.
-- A bug report is documentation, not a source-code fix. Never silently patch application code or tests after identifying an issue.
-- Keep reports and experiment helpers outside `src/`, tests, and package configuration. Do not overwrite an existing report; use a distinct descriptive filename.
+- Never present a hypothesis as a confirmed defect or an estimate as a measured result.
+- Reports, backlogs, and experiment helpers must remain outside `src/`, tests, and package configuration. Do not overwrite existing reports; use a distinct descriptive filename.
+- **Investigation does not authorize implementation.** Do not change source, tests, configuration, dependencies, or runtime behavior until the specific backlog ID has explicit human approval.
+
+## Review cadence and approval model
+
+- Maintain one numbered backlog at `PERFORMANCE-INVESTIGATION-BACKLOG.md` in the project root.
+- Every bug or enhancement gets a stable unique ID (for example, `PERF-001`) and its own row. Keep detailed evidence and test plans in a linked standalone report where needed.
+- Backlog columns must include: **ID, Type, Area, Finding, Evidence, Current-system impact, Proposed change, Estimated improvement, Effort/risk, Status, Test/verification plan, and Review date/cycle**.
+- Number IDs sequentially; never reuse an ID. Keep findings in the backlog even if they are deferred or rejected, with the review decision recorded.
+- The human review happens weekly or biweekly. At each review, the human approves, defers, rejects, or requests more evidence for each individual ID. Only explicitly approved IDs may proceed. Approval of one item does not approve related or adjacent items.
+- Before implementation, confirm the exact approved ID and scope. If approval is unclear, ask before editing.
+- Items not approved remain untouched: no code changes, test changes, config changes, dependency additions, or opportunistic cleanup.
+- Estimated improvement must state its basis and uncertainty (for example, hypothesis pending benchmark); do not invent percentages or promise gains. Prefer measurable targets and a validation method.
+- Update status and review date after each review. Use statuses such as `Needs evidence`, `Ready for review`, `Approved`, `Deferred`, `Rejected`, `In progress`, `Verified`, and `Blocked`.
+- An item is not `Verified` or `Resolved` until its approved change and required tests/measurements have passed.
 
 ## Required bug-to-fix workflow
-Follow this sequence for every evidence-backed issue. Do not skip or reorder the approval gate.
 
-1. **Detect and document:** Record the evidence and create a standalone Markdown bug report. Do not change application source or tests during profiling.
-2. **Define regression coverage:** The report must specify test cases that fail or expose the defect before the fix and pass after the fix. Include the intended assertions, relevant test file(s), and any test limitations. If a reliable automated regression test is not feasible, explain why and specify the repeatable manual verification instead.
-3. **Prepare for human review:** A coding agent may inspect the current implementation and propose a test-only change or a patch plan for review, but it must not implement the application fix or modify test files before explicit human approval. Do not present a test as passing unless it was actually run.
-4. **Human approval:** Wait for an explicit approval of the proposed implementation. The bug report alone is not authorization.
-5. **Implement and test:** After approval, inspect the current source and tests again. Implement the smallest safe fix and add or update the regression tests described in the report. Keep tests focused on the defect and preserve existing behavior.
-6. **Verify:** Run the targeted regression test(s), then the full suite (`node --test test/*.test.js`). Report the exact commands and results. The issue is not resolved if a relevant test or the full suite fails; investigate and report the failure rather than weakening or deleting a valid test merely to get a green result.
-7. **Close with evidence:** Update the bug report with the implemented change, test names, commands, pass/fail output, and any remaining limitations. Mark it resolved only after required tests pass. Include the diff summary and confirm that no out-of-scope thread-pool work was performed.
+1. **Investigate and document:** Gather bounded evidence. Do not change application source or tests.
+2. **Create/update backlog:** Assign the next unique ID and add a complete table row with current-system impact and estimated improvement. Link a standalone report for detailed evidence.
+3. **Define verification:** Specify regression tests, performance measurements, acceptance criteria, and limitations. Distinguish pre-fix observations from post-fix targets.
+4. **Prepare for review:** A coding agent may inspect implementation and propose a patch/test plan, but must not implement or modify source/tests without approval of the specific ID.
+5. **Weekly/biweekly human review:** Record the decision per ID. Wait if an item is deferred, rejected, or still needs evidence.
+6. **Implement only approved scope:** Re-inspect current code and tests; make the smallest safe change for the approved ID only. Do not bundle unapproved findings.
+7. **Verify:** Run targeted regression tests, then the full suite (`node --test test/*.test.js`), and repeat comparable bounded measurements. Record exact commands, results, and environment.
+8. **Update records:** Update the detailed report and backlog with diff summary, tests, before/after results, limitations, decision, and status. Keep the item open/blocked if required checks fail.
 
 ## Workflow
+
 1. Confirm the working directory, Node.js version, required files, and project scripts.
-2. Inspect the current implementation of `src/server.js`, `scripts/profile.js`, and relevant tests before interpreting metrics.
-3. Run `node --test test/*.test.js`. If tests fail, report the exact failure and stop dependent performance experiments.
+2. Inspect `src/server.js`, `scripts/profile.js`, `scripts/threadpool-check.js` if present, and relevant tests before interpreting metrics or running a workload.
+3. Run `node --test test/*.test.js`. If tests fail, record the exact failure and stop dependent experiments.
 4. Check port 3000 for an existing listener. Resolve conflicts safely before starting the server.
 5. Start `node src/server.js` on loopback in a managed process.
-6. Capture a baseline `/diagnostics` sample after a short idle period.
-7. Run the bounded profile script (`node scripts/profile.js`) to measure request latency and diagnostics under its known `/work` workload.
-8. Perform a small controlled event-loop experiment: compare an idle observation with a bounded burst of requests to `/work?n=2000000`. Record request count, concurrency, duration, per-request latency, and before/after diagnostics. Do not increase the workload just to obtain a dramatic result.
-9. For memory learning, collect multiple samples at comparable points (idle and after the same bounded workload). Report RSS, heapUsed, heapTotal, and external memory. Do not call growth a leak unless repeated controlled observations support that hypothesis and alternatives are considered.
-10. Interpret metrics using the definitions below. Check whether reported metrics refer to the same measurement window.
-11. Stop the server process started by this workflow and verify no listener remains on port 3000.
-12. If a likely defect is supported by evidence, create a standalone bug report using the required format below. Otherwise, create no bug report and explain what evidence is still needed.
+6. Capture baseline `/diagnostics` samples after a short idle period.
+7. Run the bounded profile script (`node scripts/profile.js`) and record request latency, workload parameters, and diagnostics.
+8. Run a small controlled event-loop experiment using a bounded burst against `/work?n=2000000` only after confirming that this remains within the application's existing workload cap. Record request count, concurrency, duration, per-request latency, and before/after diagnostics.
+9. Investigate memory using multiple samples at comparable points (idle and after the same bounded workload). Record RSS, heapUsed, heapTotal, and external memory.
+10. Investigate thread-pool behavior only after inspecting the relevant code/script. Use a bounded local workload; record the operation, concurrency, duration, throughput, latency distribution, and any available queueing/worker-pool evidence. Compare with a low-concurrency baseline. If direct queue depth or pool saturation is not observable, say so; treat inferred saturation as a hypothesis. Do not claim thread-pool saturation from latency alone.
+11. Interpret metrics and check whether they refer to comparable measurement windows.
+12. Stop only the server process started by this workflow and verify no listener remains on port 3000.
+13. For every supported bug or enhancement, add a numbered backlog entry and, when useful, a detailed standalone report. If evidence is inconclusive, mark it `Needs evidence` and state the next experiment instead of asserting a defect.
 
 ## Metrics and interpretation
 
 ### CPU
-- `process.cpuUsage()` returns process CPU time in microseconds. Deltas are not machine-wide CPU percentages.
-- Record the measurement interval and workload. If useful, calculate approximate process CPU percentage as `(userDeltaUs + systemDeltaUs) / (elapsedMs * 1000) * 100`; label it as an approximate process-level ratio and do not treat it as whole-machine CPU usage.
-- A CPU-bound synchronous handler can block the event loop. Correlate CPU-time deltas with request latency and event-loop measurements rather than interpreting them alone.
+- `process.cpuUsage()` returns process CPU time in microseconds; deltas are not machine-wide CPU percentages.
+- Approximate process-level CPU ratio, when useful: `(userDeltaUs + systemDeltaUs) / (elapsedMs * 1000) * 100`. Label it accurately.
+- Correlate CPU deltas with latency and event-loop measurements. Synchronous CPU-bound work can block JavaScript callbacks.
 
 ### Memory
 - Record `rss`, `heapUsed`, `heapTotal`, and `external` from `process.memoryUsage()`.
-- Compare repeated samples after similar workload and settling periods. Heap growth may reflect allocation and garbage-collection timing; RSS can remain elevated after objects are collected.
-- A single sample or short upward trend does not establish a memory leak. Document a leak as a hypothesis unless a repeatable growth pattern and supporting evidence exist.
+- Compare repeated samples after similar workloads and settling periods. GC timing affects heap measurements; RSS may remain elevated after collection.
+- A single sample or short upward trend does not establish a leak.
 
 ### Event loop
-- `monitorEventLoopDelay()` reports histogram values in nanoseconds; divide by `1e6` to report milliseconds.
+- `monitorEventLoopDelay()` histogram values are in nanoseconds; divide by `1e6` for milliseconds.
 - Report mean, p95, and maximum delay when available, plus event-loop utilization (ELU) and request latency.
-- ELU is event-loop activity over its measurement interval, not operating-system CPU utilization.
-- A synchronous CPU-bound task prevents other JavaScript callbacks and requests from being processed until it yields or completes.
-- Inspect histogram lifecycle carefully. If a histogram is enabled once at process startup and never reset, its delay statistics summarize an accumulated sampling window, while CPU/ELU deltas may cover only the interval since the previous diagnostics request. These values are not directly window-aligned.
-- A high maximum delay with normal mean/p95 may represent a short outlier; validate it with a controlled reproduction and fresh measurement window. Never turn a surprising maximum directly into a claim about a real stall without corroboration.
+- ELU measures event-loop activity over its interval, not operating-system CPU utilization.
+- A synchronous task can prevent other JavaScript callbacks and requests from running until it yields or completes.
+- Check histogram lifecycle and measurement windows. If the histogram is cumulative while CPU/ELU are interval deltas, label the distinction; do not compare them as though they cover the same interval.
+- A high maximum with normal mean/p95 may be an outlier. Validate with controlled observations.
+
+### Thread pool
+- Node.js uses libuv's worker pool for certain asynchronous operations; not every asynchronous API uses it. Inspect the actual APIs used by the application and workload.
+- Distinguish worker-pool queueing from event-loop blocking, CPU saturation, filesystem/network delays, and downstream service latency.
+- Record workload type, configured concurrency, duration, throughput, latency distribution, and comparison baseline. Note relevant environment settings such as `UV_THREADPOOL_SIZE` if known; do not change them silently.
+- A thread-pool size change is a separate proposed change requiring its own backlog ID/approval and before/after validation.
+- If direct pool queue depth or saturation metrics are unavailable, clearly label the diagnosis as an inference and specify what evidence would strengthen it.
 
 ### Latency
-- Report request count, concurrency, workload parameters, average, p95, minimum, and maximum where calculated.
-- Small local samples are directional, not production benchmarks.
+- Record request/operation count, concurrency, workload parameters, average, p95, minimum, and maximum where calculated.
+- Small local samples are directional, not production benchmarks. Compare like-for-like conditions.
 
-## Bug report requirements
-When a likely defect is identified, write a separate Markdown report outside `src/` and tests. Prefer `bug-reports/BUG-<short-topic>.md`; create the directory if needed. If a path already contains user work, do not overwrite it; choose a new filename.
+## Backlog and detailed report requirements
 
-Every report must be understandable to a coding agent that has not seen this chat and include:
-1. Title and status: `Needs manual review — do not auto-fix`.
-2. Plain-language summary, classification, confidence, and scope.
-3. Relevant file paths and functions/lines if known.
-4. Preconditions and exact bounded reproduction steps/commands.
-5. Observed results with units and baseline comparison.
-6. Expected versus actual behavior.
-7. Why this appears to be a defect, plus alternative explanations and limitations.
-8. **Regression-test plan:** test file(s), scenario(s), expected assertions, and why the tests detect the defect. Include both a test that captures the bug and checks for the corrected behavior, plus existing tests that must remain passing. Do not claim tests have been added or passed unless that is true.
-9. Acceptance criteria, including targeted regression test(s) and the full test suite.
-10. Explicit human approval gate: no source or test changes before approval. After approval, implement the smallest safe fix, add/update tests, run tests, and report the diff.
-11. Post-fix report-update requirement: document the actual code change, tests changed, exact test commands and outcomes, and unresolved limitations. Keep the report open if tests fail.
+The root backlog `PERFORMANCE-INVESTIGATION-BACKLOG.md` is the review source of truth. Each item should have:
+- A unique sequential ID and type (`Bug` or `Enhancement`).
+- Area (CPU, memory, event loop, thread pool, latency, observability, or cross-cutting).
+- Concise finding and evidence with units, workload, and measurement window.
+- **Current-system impact:** who/what is affected, observable symptom, severity, and confidence.
+- **Proposed change:** narrowly scoped, not yet implemented.
+- **Estimated improvement:** a cautious range or qualitative estimate with assumptions and how it will be measured. If unsupported, write `Unknown — baseline/experiment required`.
+- Effort/risk, status, verification plan, and review date/cycle.
+- A link/path to a detailed report where evidence or test planning needs more room.
 
-Only file a bug when evidence indicates a repeatable defect or a concrete instrumentation/design inconsistency. If evidence is suggestive but not conclusive, label it `Hypothesis — needs confirmation` and list the confirmation experiment. Do not invent metrics, line numbers, stack traces, root causes, test results, or test names.
+A detailed report should include summary, status, classification, confidence, file paths/functions, reproduction steps, actual observations, expected versus actual behavior, alternatives/limitations, regression/performance test plan, acceptance criteria, approval gate, and post-change verification requirements. Use `Needs manual review — do not auto-fix` before approval. Never invent metrics, line numbers, test names, root causes, or test results.
 
 ## Expected investigation summary
-Report:
-- Environment and commands executed.
-- Initial test pass/fail status.
-- CPU-time observations and workload.
-- Memory measurements across comparable samples.
-- Event-loop delay (mean/p95/max), ELU, and request latency.
-- Measurement-window caveats.
-- Findings separated into observed facts, hypotheses, and conclusions.
-- Whether a bug report was created and its exact path.
-- Confirmation that application source, tests, and package configuration were not changed during profiling.
-- Cleanup result, including port 3000 status.
+
+Report environment and commands, test results, CPU and memory observations, event-loop delay/ELU/latency, thread-pool workload and evidence, measurement-window caveats, findings separated into facts/hypotheses/conclusions, backlog IDs and report paths, whether any files beyond documentation changed, and cleanup/port status.
 
 ## Failure handling
-If a command fails, capture the exact error and stop dependent steps. Do not silently retry destructive or long-running commands. Ask the user before editing application code, modifying tests, installing dependencies, binding to a non-loopback interface, or increasing workload.
+
+Capture exact errors and stop dependent steps. Do not silently retry destructive or long-running commands. Ask before editing source/tests, installing dependencies, binding beyond loopback, changing environment settings such as `UV_THREADPOOL_SIZE`, or increasing workload.
 
 ---
